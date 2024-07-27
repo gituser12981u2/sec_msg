@@ -23,3 +23,14 @@ impl Config {
         Config { log_level }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_config() {
+        let config = Config::new();
+        assert_eq!(config.log_level, "info");
+    }
+}

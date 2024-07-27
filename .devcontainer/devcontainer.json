@@ -1,0 +1,32 @@
+{
+    "name": "Rust Development Environment",
+    "dockerFile": "Dockerfile",
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.shell.linux": "/bin/bash",
+                "rust-analyzer.server.extraEnv": {
+                    "CARGO_HOME": "/usr/local/cargo",
+                    "RUSTUP_HOME": "/usr/local/rustup"
+                }
+            },
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "bungcip.better-toml"
+            ]
+        }
+    },
+    "forwardPorts": [],
+    "postCreateCommand": "sudo chown -R vscode:vscode ~/.gnupg && rustc --version && cargo --version && rustup component add clippy rustfmt && check-git-config.sh && setup-gpg.sh",
+    "mounts": [
+        "source=${localEnv:HOME}/.cargo/registry,target=/usr/local/cargo/registry,type=bind,consistency=cached",
+        "source=project-gpg,target=/home/vscode/.gnupg,type=volume"
+    ],
+    "remoteUser": "vscode",
+    "updateRemoteUserUID": true,
+    "remoteEnv": {
+        "GIT_USER_NAME": "${localEnv:GIT_USER_NAME}",
+        "GIT_USER_EMAIL": "${localEnv:GIT_USER_EMAIL}",
+        "GPG_TTY": "/dev/pts/0"
+    }
+}

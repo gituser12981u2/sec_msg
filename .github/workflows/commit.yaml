@@ -1,0 +1,19 @@
+name: Check Commit Messages
+
+on: [push, pull_request]
+
+jobs:
+  commit:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+    - name: Check commit messages
+      uses: wagoid/commitlint-github-action@v6
+      with:
+        configFile: commitlint.config.mjs

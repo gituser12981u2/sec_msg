@@ -1,0 +1,23 @@
+#!/bin/sh
+
+set -e
+
+cargo fmt --all -- --check
+cargo clippy -- -D warnings
+cargo test
+
+# Get the commit message (the first line is the subject)
+commit_msg=$(cat "$1")
+subject=$(echo "$commit_msg" | head -n1)
+
+# Define the regex pattern for conventional commits
+conventional_pattern="^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\([a-z \-]+\))?!?: .+"
+
+# Check if the commit message follows the conventional commit format
+if ! echo "$subject" | grep -qE "$conventional_pattern"; then
+    echo "Error: Commit message does not follow the Conventional Commits specification."
+    echo "Expected format: <type>[optional scope]: <description>"
+    echo "Example: feat(ui): add login button"
+    echo "Types: build, chore, ci, docs, feat, fix, perf, refactor, revert, style, test"
+    exit 1
+fi

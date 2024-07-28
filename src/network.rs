@@ -5,11 +5,11 @@
  * listening on specified addresses.
  */
 
+use std::{error::Error, time::Duration};
+
+use libp2p::{identity, tcp, tls, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
+
 use crate::protocol::Protocols;
-use libp2p::{
-    core::upgrade, identity, plaintext::PlainText2Config, swarm::SwarmBuilder, tcp::TcpConfig,
-    yamux::YamuxConfig, Multiaddr, PeerId, Swarm, Transport,
-};
 
 /// Creates a libp2p swarm with the specified keypair, peer ID, and topic.
 ///
@@ -22,27 +22,24 @@ use libp2p::{
 /// # Returns
 ///
 /// A `Result` containing the created `Swarm` or an error.
-pub fn create_swarm(
+pub async fn create_swarm(
     local_key: identity::Keypair,
     local_peer_id: PeerId,
     topic: &str,
-) -> Result<Swarm<Protocols>, Box<dyn std::error::Error>> {
-    let transport = TcpConfig::new()
-        .upgrade(upgrade::Version::V1)
-        .authenticate(PlainText2Config {
-            local_public_key: local_key.public(),
-        })
-        .multiplex(YamuxConfig::default())
-        .boxed();
-
-    let mut behaviour = Protocols::new(local_peer_id.clone(), local_key);
+) -> Result<Swarm<Protocols>, Box<dyn Error>> {
+    let mut behaviour = Protocols::new(local_peer_id, local_key);
 
     behaviour.subscribe(topic)?;
 
-    let swarm = SwarmBuilder::new(transport, behaviour, local_peer_id.clone())
-        .executor(Box::new(|fut| {
-            tokio::spawn(fut);
-        }))
+    let swarm = SwarmBuilder::with_new_identity()
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default(),
+            tls::Config::new,
+            yamux::Config::default,
+        )?
+        .with_behaviour(|_| behaviour)?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(30))) // Allows us to observe pings for 30 seconds.
         .build();
 
     Ok(swarm)
@@ -52,13 +49,39 @@ pub fn create_swarm(
 ///
 /// # Arguments
 ///
-/// * `swarm` -  The libp2p swarm.
+/// * `swarm` - The libp2p swarm.
 ///
 /// # Returns
 ///
 /// A `Result` indicating success or failure.
-pub fn listen_on(swarm: &mut Swarm<Protocols>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn listen_on(swarm: &mut Swarm<Protocols>) -> Result<(), Box<dyn Error>> {
     let addr: Multiaddr = "/ip4/0.0.0.0/tcp/0".parse()?;
     swarm.listen_on(addr)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use libp2p::{identity, PeerId};
+
+    use super::{create_swarm, listen_on};
+
+    #[tokio::test]
+    async fn test_create_swarm() {
+        let keypair = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from(keypair.public());
+        let topic = "test-topic";
+        let swarm = create_swarm(keypair, peer_id, topic).await;
+        assert!(swarm.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_listen_on() {
+        let keypair = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from(keypair.public());
+        let topic = "test-topic";
+        let mut swarm = create_swarm(keypair, peer_id, topic).await.unwrap();
+        let result = listen_on(&mut swarm);
+        assert!(result.is_ok());
+    }
 }

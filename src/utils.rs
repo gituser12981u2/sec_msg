@@ -19,3 +19,16 @@ pub fn generate_keypair() -> (identity::Keypair, PeerId) {
     info!("Generated local key pair with peer id: {:?}", local_peer_id);
     (local_key, local_peer_id)
 }
+
+#[cfg(test)]
+mod tests {
+    use libp2p::PeerId;
+
+    use super::generate_keypair;
+
+    #[test]
+    fn test_generate_keypair() {
+        let (keypair, peer_id) = generate_keypair();
+        assert_eq!(peer_id, PeerId::from(keypair.public()));
+    }
+}

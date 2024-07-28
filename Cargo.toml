@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 futures = "0.3.30"
-libp2p = { version = "0.42", features = ["tcp-tokio", "dns-tokio", "websocket", "tcp-tokio"] }
-tokio = { version = "1.38.0", features = ["full"] }
+libp2p = { version = "0.53.2", features = ["gossipsub", "floodsub", "mdns", "yamux", "tokio", "tcp", "tls", "dns", "plaintext", "websocket", "macros"] }
+tokio = { version = "1.39.1", features = ["full"] }
 async-std = "1.12.0"
-ncurses = "6.0.1"
 log = "0.4.22"
-env_logger = "0.11.3"
+env_logger = "0.11.4"
+
+[dev-dependencies]
+cargo-husky = { version = "1.5.0", features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy", "run-cargo-fmt"] }

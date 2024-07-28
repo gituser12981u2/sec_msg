@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let topic = "chat";
 
-    let mut swarm = create_swarm(local_key.clone(), local_peer_id.clone(), topic)?;
+    let mut swarm = create_swarm(local_key.clone(), local_peer_id, topic).await?;
 
     listen_on(&mut swarm)?;
 

@@ -2731,6 +2731,7 @@ dependencies = [
  "futures",
  "libp2p",
  "log",
+ "thiserror",
  "tokio",
 ]
 

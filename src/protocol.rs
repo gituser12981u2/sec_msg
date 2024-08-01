@@ -5,6 +5,7 @@
  * and Gossipsub, and provides functions to subscribe the publish messages.
  */
 
+use crate::error::ProtocolError;
 use libp2p::{
     floodsub::{self, Floodsub, FloodsubEvent},
     gossipsub::{self, MessageAuthenticity},
@@ -12,10 +13,9 @@ use libp2p::{
     swarm::NetworkBehaviour,
     PeerId,
 };
-use log::{error, info};
-use std::error::Error;
+use log::info;
 
-/// Network behavior combining Floodsub, Gossipsub, and mDNS protocols.
+/// Network behavior combining Floodsub and Gossipsub.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "ProtocolEvent")]
 pub struct Protocols {
@@ -34,21 +34,17 @@ impl Protocols {
     /// # Returns
     ///
     /// A new `Protocols` instance.
-    pub fn new(local_peer_id: PeerId, local_key: identity::Keypair) -> Self {
-        // let gossipsub_config = gossipsub::ConfigBuilder::default()
-        //     .heartbeat_interval(Duration::from_secs(10))
-        //     .validation_mode(gossipsub::ValidationMode::Strict)
-        //     .build()
-        //     .expect("Valid gossipsub config");
+    pub fn new(local_peer_id: PeerId, local_key: identity::Keypair) -> Result<Self, ProtocolError> {
+        let gossipsub = gossipsub::Behaviour::new(
+            MessageAuthenticity::Signed(local_key.clone()),
+            gossipsub::Config::default(),
+        )
+        .map_err(|e| ProtocolError::GossipsubCreation(e.to_string()))?;
 
-        Protocols {
+        Ok(Protocols {
             floodsub: Floodsub::new(local_peer_id),
-            gossipsub: gossipsub::Behaviour::new(
-                MessageAuthenticity::Signed(local_key.clone()),
-                gossipsub::Config::default(),
-            )
-            .expect("Valid gossipsub instance"),
-        }
+            gossipsub,
+        })
     }
 
     /// Subscribes to the specified topic.
@@ -60,18 +56,19 @@ impl Protocols {
     /// # Returns
     ///
     /// A `result` indicating success or failure.
-    pub fn subscribe(&mut self, topic: &str) -> Result<(), Box<dyn Error>> {
+    pub fn subscribe(&mut self, topic: &str) -> Result<(), ProtocolError> {
         let floodsub_topic = floodsub::Topic::new(topic);
         if !self.floodsub.subscribe(floodsub_topic.clone()) {
-            error!("Failed to subscribe to floodsub topic: {:?}", topic);
-            return Err("Failed to subscribe to floodsub topic".into());
+            return Err(ProtocolError::Subscription(format!(
+                "Failed to subscribe to Floodsub topic: {topic}"
+            )));
         }
 
         let gossipsub_topic = gossipsub::IdentTopic::new(topic);
-        if self.gossipsub.subscribe(&gossipsub_topic).is_err() {
-            error!("Failed to subscribe to gossipsub topic: {:?}", topic);
-            return Err("Failed to subscribe to gossipsub topic".into());
-        }
+        self.gossipsub.subscribe(&gossipsub_topic).map_err(|_| {
+            ProtocolError::Subscription(format!("Failed to subscribe to Gossipsub topic: {topic}"))
+        })?;
+
         info!("Subscribed to topic: {:?}", topic);
         Ok(())
     }
@@ -86,7 +83,7 @@ impl Protocols {
     /// # Returns
     ///
     /// A `Result` indicating success or failure.
-    pub fn publish(&mut self, topic: &str, data: &[u8]) -> Result<(), Box<dyn Error>> {
+    pub fn publish(&mut self, topic: &str, data: &[u8]) -> Result<(), ProtocolError> {
         let floodsub_topic = floodsub::Topic::new(topic);
         self.floodsub.publish(floodsub_topic, data.to_vec());
 
@@ -120,62 +117,55 @@ impl From<gossipsub::Event> for ProtocolEvent {
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
+    use libp2p::{gossipsub, identity, PeerId};
 
-    use libp2p::{
-        floodsub,
-        gossipsub::{self, PublishError},
-        identity, PeerId,
-    };
+    use crate::{error::ProtocolError, protocol::Protocols};
 
-    use crate::protocol::Protocols;
+    fn create_test_protocols() -> Protocols {
+        let keypair = identity::Keypair::generate_ed25519();
+        let peer_id = PeerId::from(keypair.public());
+        Protocols::new(peer_id, keypair).expect("Failed to create Protocols")
+    }
 
     #[test]
     fn test_procotols_new() {
-        let keypair = identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from(keypair.public());
-        let protocols = Protocols::new(peer_id, keypair);
-        // Floodsub does not have a direct method to get topics
+        let protocols = create_test_protocols();
         assert!(protocols.gossipsub.topics().next().is_none());
     }
 
     #[test]
-    fn test_subscribe_publish() {
-        let keypair = identity::Keypair::generate_ed25519();
-        let peer_id = PeerId::from(keypair.public());
-        let mut protocols = Protocols::new(peer_id, keypair);
-
+    fn test_subscribe() {
+        let mut protocols = create_test_protocols();
         let topic = "test-topic";
-        protocols.subscribe(topic).unwrap();
 
-        // Check Floodsub subscription
-        let _floodsub_topic = floodsub::Topic::new(topic);
-        // Note: Floodsub does not have a public API to check subscribed topics,
-        // therefore, it assumed that if subscribe() returns no error then it works.
+        assert!(protocols.subscribe(topic).is_ok());
 
-        // Check Gossipsub subscription
         let gossipsub_topic = gossipsub::IdentTopic::new(topic);
         assert!(protocols
             .gossipsub
             .topics()
             .any(|t| t == &gossipsub_topic.hash()));
+    }
 
-        thread::sleep(Duration::from_millis(100));
-
+    #[test]
+    fn test_publish() {
+        let mut protocols = create_test_protocols();
+        let topic = "test-topic";
         let data = b"test-message";
+
+        protocols.subscribe(topic).expect("Failed to subscribe");
+
         match protocols.publish(topic, data) {
             Ok(_) => println!("Message published successfully"),
-            Err(e) => {
-                if let Some(publish_error) = e.downcast_ref::<PublishError>() {
-                    if matches!(publish_error, PublishError::InsufficientPeers) {
-                        println!("Expected error: InsufficientPeers");
-                    } else {
-                        panic!("Unexpected gossipsub publish error: {:?}", publish_error);
-                    }
-                } else {
-                    panic!("Unexpected error: {:?}", e);
+            Err(e) => match e {
+                ProtocolError::Publish(publish_error) => {
+                    assert!(matches!(
+                        publish_error,
+                        gossipsub::PublishError::InsufficientPeers
+                    ));
                 }
-            }
+                _ => panic!("Unexpected error: {:?}", e),
+            },
         }
     }
 }

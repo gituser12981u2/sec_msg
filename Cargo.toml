@@ -10,6 +10,7 @@ tokio = { version = "1.39.1", features = ["full"] }
 async-std = "1.12.0"
 log = "0.4.22"
 env_logger = "0.11.4"
+thiserror = "1.0.63"
 
 [dev-dependencies]
 cargo-husky = { version = "1.5.0", features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy", "run-cargo-fmt"] }

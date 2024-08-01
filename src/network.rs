@@ -5,11 +5,12 @@
  * listening on specified addresses.
  */
 
-use std::{error::Error, time::Duration};
-
+use crate::{
+    error::{AppError, NetworkError},
+    protocol::Protocols,
+};
 use libp2p::{identity, tcp, tls, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder};
-
-use crate::protocol::Protocols;
+use std::time::Duration;
 
 /// Creates a libp2p swarm with the specified keypair, peer ID, and topic.
 ///
@@ -26,10 +27,13 @@ pub async fn create_swarm(
     local_key: identity::Keypair,
     local_peer_id: PeerId,
     topic: &str,
-) -> Result<Swarm<Protocols>, Box<dyn Error>> {
-    let mut behaviour = Protocols::new(local_peer_id, local_key);
+) -> Result<Swarm<Protocols>, AppError> {
+    let mut behaviour = Protocols::new(local_peer_id, local_key)
+        .map_err(|e| NetworkError::ProtocolCreation(e.to_string()))?;
 
-    behaviour.subscribe(topic)?;
+    behaviour
+        .subscribe(topic)
+        .map_err(|e| NetworkError::TopicSubscription(e.to_string()))?;
 
     let swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
@@ -37,9 +41,14 @@ pub async fn create_swarm(
             tcp::Config::default(),
             tls::Config::new,
             yamux::Config::default,
-        )?
-        .with_behaviour(|_| behaviour)?
-        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(30))) // Allows us to observe pings for 30 seconds.
+        )
+        .map_err(|e| NetworkError::SwarmBuilder(e.to_string()))?
+        .with_behaviour(|_| behaviour)
+        .map_err(|e| NetworkError::SwarmBuilder(e.to_string()))?
+        .with_swarm_config(|cfg| {
+            cfg.with_idle_connection_timeout(Duration::from_secs(30))
+                .with_per_connection_event_buffer_size(128)
+        }) // Allows us to observe pings for 30 seconds.
         .build();
 
     Ok(swarm)
@@ -54,9 +63,15 @@ pub async fn create_swarm(
 /// # Returns
 ///
 /// A `Result` indicating success or failure.
-pub fn listen_on(swarm: &mut Swarm<Protocols>) -> Result<(), Box<dyn Error>> {
-    let addr: Multiaddr = "/ip4/0.0.0.0/tcp/0".parse()?;
-    swarm.listen_on(addr)?;
+pub fn listen_on(swarm: &mut Swarm<Protocols>) -> Result<(), AppError> {
+    let addr: Multiaddr = "/ip4/0.0.0.0/tcp/0"
+        .parse()
+        .map_err(|e: libp2p::multiaddr::Error| NetworkError::AddressParse(e.to_string()))?;
+
+    swarm
+        .listen_on(addr)
+        .map_err(|e| NetworkError::Listen(e.to_string()))?;
+
     Ok(())
 }
 

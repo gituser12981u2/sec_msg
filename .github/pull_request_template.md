@@ -24,7 +24,7 @@
 - [ ] This code follows the style guidelines of this project (rust fmt)
 - [ ] Code has been self-reviewed
 - [ ] Code has been commented, particularly in hard-to-understand areas
-- [ ] Code has docustrings for all functions, methods, structs, and impl's
+- [ ] Code has docustrings for all functions, methods, structs, enums, and impls
 - [ ] Corresponding changes have been made to the documentation
 - [ ] Running Clippy and audit locally return no errors or warnings
 - [ ] Tests have been added for new features

@@ -1,0 +1,28 @@
+name: Feature Request
+description: Suggest an idea for this project
+title: "[Feature Request]: "
+labels: ["enhancement"]
+projects: ["sec_msg"]
+assignees:
+  - gituser12981u2
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a new feature.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Please describe the feature.
+      description: A clear and concise description.
+      placeholder: Ex. This feature should do ... because of ...
+    validations:
+      required: true
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Duplicate feature
+      description: By submitting this issue, you agree that you checked for other similar issues
+      options:
+        - label: I agree that I have searched for similar issues to avoid creating duplicates.
+          required: true

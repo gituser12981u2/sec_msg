@@ -5,7 +5,10 @@
  * events for Floodsub and Gossipsub.
  */
 
-use crate::protocol::{ProtocolEvent, Protocols};
+use crate::{
+    error::{AppError, EventError, NetworkError},
+    protocol::{ProtocolEvent, Protocols},
+};
 use libp2p::swarm::{Swarm, SwarmEvent};
 use log::{error, info};
 
@@ -15,12 +18,17 @@ use log::{error, info};
 ///
 /// * `event` - The swarm event.
 /// * `swarm` - The libp2p swarm.
-pub async fn handle_event(event: SwarmEvent<ProtocolEvent>, swarm: &mut Swarm<Protocols>) {
+pub async fn handle_event(
+    event: SwarmEvent<ProtocolEvent>,
+    swarm: &mut Swarm<Protocols>,
+) -> Result<(), AppError> {
     match event {
         SwarmEvent::Behaviour(event) => match event {
-            ProtocolEvent::Floodsub(floodsub_event) => handle_floodsub_event(floodsub_event).await,
+            ProtocolEvent::Floodsub(floodsub_event) => {
+                handle_floodsub_event(floodsub_event).await?;
+            }
             ProtocolEvent::Gossipsub(gossipsub_event) => {
-                handle_gossipsub_event(*gossipsub_event).await
+                handle_gossipsub_event(*gossipsub_event).await?;
             }
         },
         SwarmEvent::NewListenAddr {
@@ -37,6 +45,13 @@ pub async fn handle_event(event: SwarmEvent<ProtocolEvent>, swarm: &mut Swarm<Pr
             concurrent_dial_errors,
             established_in,
         } => {
+            if num_established == std::num::NonZero::new(0).unwrap() {
+                return Err(NetworkError::Connection(format!(
+                    "Failed to establish connection with peer {:?}",
+                    peer_id
+                ))
+                .into());
+            }
             info!(
                 "Connected to {:?}, connection_id={:?} endpoint={:?}, num_established={}, concurrent_dial_errors={:?}, established_in={:?}",
                 peer_id, connection_id, endpoint, num_established, concurrent_dial_errors, established_in
@@ -50,13 +65,16 @@ pub async fn handle_event(event: SwarmEvent<ProtocolEvent>, swarm: &mut Swarm<Pr
             peer_id,
             endpoint,
             num_established,
-            cause: _,
+            cause,
             connection_id,
         } => {
             info!(
                 "Connection closed for {:?}, endpoint={:?}, num_established={}, connection_id={:?}",
                 peer_id, endpoint, num_established, connection_id
             );
+            if let Some(error) = cause {
+                return Err(NetworkError::ConnectionClose(error.to_string()).into());
+            }
         }
         SwarmEvent::IncomingConnection {
             local_addr,
@@ -77,7 +95,8 @@ pub async fn handle_event(event: SwarmEvent<ProtocolEvent>, swarm: &mut Swarm<Pr
             error!(
                 "Incoming connection error: {:?} from {:?}, send_back_addr={:?}, connection_id={:?}",
                 error, local_addr, send_back_addr, connection_id
-            )
+            );
+            return Err(NetworkError::IncomingConnection(error.to_string()).into());
         }
         SwarmEvent::Dialing {
             peer_id,
@@ -86,9 +105,10 @@ pub async fn handle_event(event: SwarmEvent<ProtocolEvent>, swarm: &mut Swarm<Pr
             info!("Dialing {:?}, connection_id={:?}", peer_id, connection_id);
         }
         _ => {
-            error!("Unhandled event. Please post github issue.");
+            return Err(EventError::UnhandledSwarm("Unknown swarm event".to_string()).into());
         }
     }
+    Ok(())
 }
 
 /// Handles Floodsub events.
@@ -96,13 +116,19 @@ pub async fn handle_event(event: SwarmEvent<ProtocolEvent>, swarm: &mut Swarm<Pr
 /// # Arguments
 ///
 /// * `event` - The Floodsub event.
-async fn handle_floodsub_event(event: libp2p::floodsub::FloodsubEvent) {
-    if let libp2p::floodsub::FloodsubEvent::Message(message) = event {
-        let msg = String::from_utf8_lossy(&message.data);
-        info!(
-            "Floodsub message received: '{:?}' from {:?}",
-            msg, message.source
-        );
+async fn handle_floodsub_event(event: libp2p::floodsub::FloodsubEvent) -> Result<(), EventError> {
+    match event {
+        libp2p::floodsub::FloodsubEvent::Message(message) => {
+            let msg = String::from_utf8_lossy(&message.data);
+            info!(
+                "Floodsub message received: '{:?}' from {:?}",
+                msg, message.source
+            );
+            Ok(())
+        }
+        _ => Err(EventError::FloodsubEvent(
+            "Unexpected Floodsub event".to_string(),
+        )),
     }
 }
 
@@ -111,17 +137,22 @@ async fn handle_floodsub_event(event: libp2p::floodsub::FloodsubEvent) {
 /// # Arguments
 ///
 /// * `event` -  The Gossipsub event.
-async fn handle_gossipsub_event(event: libp2p::gossipsub::Event) {
-    if let libp2p::gossipsub::Event::Message {
-        propagation_source,
-        message_id,
-        message,
-    } = event
-    {
-        let msg = String::from_utf8_lossy(&message.data);
-        info!(
-            "Gossipsub message received: '{:?}' from {:?} wit id {:?}, propagation source: {:?}",
-            msg, message.source, message_id, propagation_source
-        );
+async fn handle_gossipsub_event(event: libp2p::gossipsub::Event) -> Result<(), EventError> {
+    match event {
+        libp2p::gossipsub::Event::Message {
+            propagation_source,
+            message_id,
+            message,
+        } => {
+            let msg = String::from_utf8_lossy(&message.data);
+            info!(
+                "Gossipsub message received: '{:?}' from {:?} wit id {:?}, propagation source: {:?}",
+                msg, message.source, message_id, propagation_source
+            );
+            Ok(())
+        }
+        _ => Err(EventError::GossipsubEvent(
+            "Unexpected Gossipsub event".to_string(),
+        )),
     }
 }

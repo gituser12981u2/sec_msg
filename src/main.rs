@@ -6,6 +6,7 @@
  */
 
 mod config;
+mod error;
 mod event;
 mod network;
 mod protocol;
@@ -54,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             event = swarm.next() => match event {
-                Some(event) => event::handle_event(event, &mut swarm).await,
+                Some(event) => event::handle_event(event, &mut swarm).await?,
                 None => error!("Swarm stream closed"),
             }
         }

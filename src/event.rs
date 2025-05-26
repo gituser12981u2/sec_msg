@@ -48,8 +48,7 @@ pub async fn handle_event(
         } => {
             if num_established == std::num::NonZero::new(0).unwrap() {
                 return Err(NetworkError::Connection(format!(
-                    "Failed to establish connection with peer {:?}",
-                    peer_id
+                    "Failed to establish connection with peer {peer_id:?}",
                 ))
                 .into());
             }

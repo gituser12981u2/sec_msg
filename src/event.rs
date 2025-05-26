@@ -7,10 +7,10 @@
 
 use crate::{
     error::{AppError, EventError, NetworkError},
-    protocol::{ProtocolEvent, Protocols},
+    protocol::{ProtocolEvent, Protocols, RateLimiter},
 };
 use libp2p::swarm::{Swarm, SwarmEvent};
-use log::{error, info};
+use log::{error, info, warn};
 
 /// Handles swarm events and dispatches them to the appropriate handlers.
 ///
@@ -21,14 +21,15 @@ use log::{error, info};
 pub async fn handle_event(
     event: SwarmEvent<ProtocolEvent>,
     swarm: &mut Swarm<Protocols>,
+    rate_limiter: &mut RateLimiter,
 ) -> Result<(), AppError> {
     match event {
         SwarmEvent::Behaviour(event) => match event {
             ProtocolEvent::Floodsub(floodsub_event) => {
-                handle_floodsub_event(floodsub_event).await?;
+                handle_floodsub_event(floodsub_event, rate_limiter).await?;
             }
             ProtocolEvent::Gossipsub(gossipsub_event) => {
-                handle_gossipsub_event(*gossipsub_event).await?;
+                handle_gossipsub_event(*gossipsub_event, rate_limiter).await?;
             }
         },
         SwarmEvent::NewListenAddr {
@@ -116,15 +117,23 @@ pub async fn handle_event(
 /// # Arguments
 ///
 /// * `event` - The Floodsub event.
-async fn handle_floodsub_event(event: libp2p::floodsub::FloodsubEvent) -> Result<(), EventError> {
+async fn handle_floodsub_event(
+    event: libp2p::floodsub::FloodsubEvent,
+    rate_limiter: &mut RateLimiter,
+) -> Result<(), EventError> {
     match event {
         libp2p::floodsub::FloodsubEvent::Message(message) => {
-            let msg = String::from_utf8_lossy(&message.data);
-            info!(
-                "Floodsub message received: '{:?}' from {:?}",
-                msg, message.source
-            );
-            Ok(())
+            if rate_limiter.check_rate_limit(&message.source) {
+                let msg = String::from_utf8_lossy(&message.data);
+                info!(
+                    "Floodsub message received: '{:?}' from {:?}",
+                    msg, message.source
+                );
+                Ok(())
+            } else {
+                warn!("Rate limit exceeded for peer {:?}", message.source);
+                Err(EventError::FloodsubEvent("Rate limit exceeded".to_string()))
+            }
         }
         _ => Err(EventError::FloodsubEvent(
             "Unexpected Floodsub event".to_string(),
@@ -137,19 +146,29 @@ async fn handle_floodsub_event(event: libp2p::floodsub::FloodsubEvent) -> Result
 /// # Arguments
 ///
 /// * `event` -  The Gossipsub event.
-async fn handle_gossipsub_event(event: libp2p::gossipsub::Event) -> Result<(), EventError> {
+async fn handle_gossipsub_event(
+    event: libp2p::gossipsub::Event,
+    rate_limiter: &mut RateLimiter,
+) -> Result<(), EventError> {
     match event {
         libp2p::gossipsub::Event::Message {
             propagation_source,
             message_id,
             message,
         } => {
-            let msg = String::from_utf8_lossy(&message.data);
-            info!(
-                "Gossipsub message received: '{:?}' from {:?} wit id {:?}, propagation source: {:?}",
-                msg, message.source, message_id, propagation_source
-            );
-            Ok(())
+            if rate_limiter.check_rate_limit(&propagation_source) {
+                let msg = String::from_utf8_lossy(&message.data);
+                info!(
+                    "Gossipsub message received: '{:?}' from {:?} wit id {:?}, propagation source: {:?}",
+                    msg, message.source, message_id, propagation_source
+                );
+                Ok(())
+            } else {
+                warn!("Rate limit exceeded for peer {:?}", propagation_source);
+                Err(EventError::GossipsubEvent(
+                    "Rate limit exceeded".to_string(),
+                ))
+            }
         }
         _ => Err(EventError::GossipsubEvent(
             "Unexpected Gossipsub event".to_string(),

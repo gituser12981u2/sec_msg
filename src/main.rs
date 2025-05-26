@@ -18,6 +18,7 @@ use config::Config;
 use futures::StreamExt;
 use log::error;
 use network::{create_swarm, listen_on};
+use protocol::RateLimiter;
 use tokio::io::AsyncBufReadExt;
 use ui::handle_user_input;
 
@@ -28,10 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let (local_key, local_peer_id) = utils::generate_keypair();
-
     let topic = "chat";
-
     let mut swarm = create_swarm(local_key.clone(), local_peer_id, topic).await?;
+    let mut rate_limiter = RateLimiter::new();
 
     listen_on(&mut swarm)?;
 
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             event = swarm.next() => match event {
-                Some(event) => event::handle_event(event, &mut swarm).await?,
+                Some(event) => event::handle_event(event, &mut swarm, &mut rate_limiter).await?,
                 None => error!("Swarm stream closed"),
             }
         }

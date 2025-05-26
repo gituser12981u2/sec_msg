@@ -40,6 +40,10 @@ pub enum ProtocolError {
     /// Error occurring when failing to create a Gossipsub behaviour.
     #[error("Failed to create Gossipsub behavior: {0}")]
     GossipsubCreation(String),
+
+    /// Error occurring when input validation fails.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }
 
 /// Represents errors that can occur during event handling

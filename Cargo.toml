@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-futures = "0.3.30"
+futures = "0.3.31"
 libp2p = { version = "0.53.2", features = ["gossipsub", "floodsub", "mdns", "yamux", "tokio", "tcp", "tls", "dns", "plaintext", "websocket", "macros"] }
 tokio = { version = "1.44.2", features = ["full"] }
 async-std = "1.12.0"
